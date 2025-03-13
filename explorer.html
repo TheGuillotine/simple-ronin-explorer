@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Ronin Explorer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+        }
+        h2 {
+            color: #3498db;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-bottom: 15px;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+        }
+        .result {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 15px;
+            white-space: pre-wrap;
+        }
+        .method-list {
+            list-style: none;
+            padding: 0;
+        }
+        .method-item {
+            background-color: #f8f9fa;
+            padding: 10px 15px;
+            margin-bottom: 8px;
+            border-left: 4px solid #3498db;
+            border-radius: 0 4px 4px 0;
+        }
+        .method-name {
+            font-weight: bold;
+            font-family: monospace;
+        }
+        .method-result {
+            margin-top: 5px;
+            font-family: monospace;
+            color: #2c3e50;
+            word-break: break-all;
+        }
+        .hidden {
+            display: none;
+        }
+        select {
+            margin-right: 10px;
+        }
+        .endpoint-status {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        .endpoint-success {
+            background-color: #28a745;
+        }
+        .endpoint-failed {
+            background-color: #dc3545;
+        }
+        .endpoint-unknown {
+            background-color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Simple Ronin Explorer</h1>
+
+        <h2>Connection Setup</h2>
+        <div>
+            <label for="rpc-endpoint">Ronin RPC Endpoint:</label>
+            <select id="rpc-endpoint">
+                <option value="https://api.roninchain.com/rpc">api.roninchain.com/rpc</option>
+                <option value="https://api.roninchain.com/eth">api.roninchain.com/eth</option>
+                <option value="https://api-gateway.skymavis.com/rpc">api-gateway.skymavis.com/rpc</option>
+            </select>
+            <button id="test-connection">Test Connection</button>
+            <div id="connection-status" class="status info">Click "Test Connection" to verify the endpoint</div>
+        </div>
+
+        <h2>Contract Information</h2>
+        <div>
+            <label for="contract-address">Contract Address:</label>
+            <input type="text" id="contract-address" placeholder="Enter contract address (0x...)" value="0xfB597d6Fa6C08f5434e6eCf69114497343aE13Dd">
+            <button id="check-contract">Check Contract</button>
+            <div id="contract-status" class="status info">Enter a contract address and click "Check Contract"</div>
+            <div id="contract-info" class="result hidden"></div>
+        </div>
+
+        <h2>Contract Functions</h2>
+        <button id="test-functions">Test Common Functions</button>
+        <div id="functions-status" class="status info">Click "Test Common Functions" to find working contract functions</div>
+        <div id="functions-loading" class="loading hidden">Testing functions...</div>
+        <ul id="function-results" class="method-list hidden"></ul>
+
+        <h2>Custom Function Call</h2>
+        <div>
+            <label for="function-signature">Function Signature:</label>
+            <input type="text" id="function-signature" placeholder="e.g. balanceOf(address)">
+            <label for="function-params">Parameters (comma separated):</label>
+            <input type="text" id="function-params" placeholder="e.g. 0x1234...">
+            <button id="call-function">Call Function</button>
+            <div id="function-status" class="status info">Enter a function signature and parameters, then click "Call Function"</div>
+            <div id="function-result" class="result hidden"></div>
+        </div>
+    </div>
+
+    <script>
+        // Constants and variables
+        const CONTRACT_ADDRESS = '0xfB597d6Fa6C08f5434e6eCf69114497343aE13Dd';
+        let SELECTED_RPC_URL = document.getElementById('rpc-endpoint').value;
+        
+        // Common function selectors for various contract types
+        const COMMON_FUNCTIONS = {
+            // ERC20 functions
+            'name()': '0x06fdde03',
+            'symbol()': '0x95d89b41',
+            'decimals()': '0x313ce567',
+            'totalSupply()': '0x18160ddd',
+            'balanceOf(address)': '0x70a08231',
+            
+            // Admin/owner functions
+            'owner()': '0x8da5cb5b',
+            'getOwner()': '0x893d20e8',
+            'paused()': '0x5c975abb',
+            
+            // Staking related functions
+            'totalStakers()': '0x2a7401c8',
+            'getTotalStakers()': '0x5ea4fa3f',
+            'stakerCount()': '0x158626f7',
+            'getStakers()': '0x43adbcef',
+            'getAllStakers()': '0x4a393149',
+            'getStakerList()': '0xf7793ad2',
+            'totalStaked()': '0x817b1cd2',
+            'getStakingInfo()': '0x8f0cb5de',
+            'stakingEnabled()': '0x0cefb5de',
+            'getStakingBalance(address)': '0x14afd79e',
+            'stakedBalance(address)': '0x60846bc6',
+            
+            // Other common functions
+            'implementation()': '0x5c60da1b',
+            'version()': '0x54fd4d50',
+            'initialize()': '0x8129fc1c'
+        };
+        
+        // DOM elements
+        const rpcEndpointSelect = document.getElementById('rpc-endpoint');
+        const testConnectionBtn = document.getElementById('test-connection');
+        const connectionStatus = document.getElementById('connection-status');
+        const contractAddressInput = document.getElementById('contract-address');
+        const checkContractBtn = document.getElementById('check-contract');
+        const contractStatus = document.getElementById('contract-status');
+        const contractInfo = document.getElementById('contract-info');
+        const testFunctionsBtn = document.getElementById('test-functions');
+        const functionsStatus = document.getElementById('functions-status');
+        const functionsLoading = document.getElementById('functions-loading');
+        const functionResults = document.getElementById('function-results');
+        const functionSignatureInput = document.getElementById('function-signature');
+        const functionParamsInput = document.getElementById('function-params');
+        const callFunctionBtn = document.getElementById('call-function');
+        const functionStatus = document.getElementById('function-status');
+        const functionResult = document.getElementById('function-result');
+        
+        // Event listeners
+        rpcEndpointSelect.addEventListener('change', () => {
+            SELECTED_RPC_URL = rpcEndpointSelect.value;
+            connectionStatus.className = 'status info';
+            connectionStatus.textContent = 'Click "Test Connection" to verify the endpoint';
+        });
+        
+        testConnectionBtn.addEventListener('click', testConnection);
+        checkContractBtn.addEventListener('click', checkContract);
+        testFunctionsBtn.addEventListener('click', testContractFunctions);
+        callFunctionBtn.addEventListener('click', callCustomFunction);
+        
+        // Function to update the RPC endpoint
+        function updateRpcEndpoint(url) {
+            SELECTED_RPC_URL = url;
+            rpcEndpointSelect.value = url;
+        }
+        
+        // Function to make a JSON-RPC call
+        async function callJsonRpc(method, params) {
+            try {
+                const response = await fetch(SELECTED_RPC_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        jsonrpc: '2.0',
+                        id: Date.now(),
+                        method: method,
+                        params: params
+                    }),
+                });
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(`RPC Error: ${data.error.message || JSON.stringify(data.error)}`);
+                }
+                
+                return data.result;
+            } catch (error) {
+                throw new Error(`Network Error: ${error.message}`);
+            }
+        }
+        
+        // Function to test the connection to the RPC endpoint
+        async function testConnection() {
+            connectionStatus.className = 'status info';
+            connectionStatus.textContent = 'Testing connection...';
+            
+            try {
+                const blockNumber = await callJsonRpc('eth_blockNumber', []);
+                const blockNumberDecimal = parseInt(blockNumber, 16);
+                
+                connectionStatus.className = 'status success';
+                connectionStatus.textContent = `Connection successful! Current block number: ${blockNumberDecimal}`;
+                
+                return true;
+            } catch (error) {
+                connectionStatus.className = 'status error';
+                connectionStatus.textContent = `Connection failed: ${error.message}`;
+                
+                // Try other endpoints
+                if (SELECTED_RPC_URL !== 'https://api.roninchain.com/eth') {
+                    updateRpcEndpoint('https://api.roninchain.com/eth');
+                    connectionStatus.textContent += '. Trying api.roninchain.com/eth...';
+                    return testConnection();
+                } else if (SELECTED_RPC_URL !== 'https://api-gateway.skymavis.com/rpc') {
+                    updateRpcEndpoint('https://api-gateway.skymavis.com/rpc');
+                    connectionStatus.textContent += '. Trying api-gateway.skymavis.com/rpc...';
+                    return testConnection();
+                }
+                
+                return false;
+            }
+        }
+        
+        // Function to check if an address is a contract
+        async function checkContract() {
+            const address = contractAddressInput.value.trim();
+            
+            if (!address || !address.startsWith('0x') || address.length !== 42) {
+                contractStatus.className = 'status error';
+                contractStatus.textContent = 'Please enter a valid contract address (0x...)';
+                contractInfo.classList.add('hidden');
+                return;
+            }
+            
+            contractStatus.className = 'status info';
+            contractStatus.textContent = 'Checking contract...';
+            contractInfo.classList.add('hidden');
+            
+            try {
+                // Test connection first
+                const connected = await testConnection();
+                if (!connected) {
+                    contractStatus.className = 'status error';
+                    contractStatus.textContent = 'Unable to connect to Ronin blockchain. Please check your connection.';
+                    return;
+                }
+                
+                // Get code at address
+                const code = await callJsonRpc('eth_getCode', [address, 'latest']);
+                
+                if (code === '0x') {
+                    contractStatus.className = 'status error';
+                    contractStatus.textContent = 'This address is not a contract (no code at this address)';
+                    return;
+                }
+                
+                // Get balance
+                const balance = await callJsonRpc('eth_getBalance', [address, 'latest']);
+                const balanceInEth = parseInt(balance, 16) / 1e18;
+                
+                // Get transaction count
+                const txCount = await callJsonRpc('eth_getTransactionCount', [address, 'latest']);
+                const txCountDecimal = parseInt(txCount, 16);
+                
+                contractStatus.className = 'status success';
+                contractStatus.textContent = 'Contract found!';
+                
+                contractInfo.innerHTML = `
+                    <p><strong>Address:</strong> ${address}</p>
+                    <p><strong>Code Size:</strong> ${(code.length - 2) / 2} bytes</p>
+                    <p><strong>Balance:</strong> ${balanceInEth.toFixed(6)} RON</p>
+                    <p><strong>Transaction Count:</strong> ${txCountDecimal}</p>
+                `;
+                contractInfo.classList.remove('hidden');
+                
+            } catch (error) {
+                contractStatus.className = 'status error';
+                contractStatus.textContent = `Error checking contract: ${error.message}`;
+            }
+        }
+        
+        // Function to test common contract functions
+        async function testContractFunctions() {
+            const address = contractAddressInput.value.trim();
+            
+            if (!address || !address.startsWith('0x') || address.length !== 42) {
+                functionsStatus.className = 'status error';
+                functionsStatus.textContent = 'Please enter a valid contract address (0x...)';
+                return;
+            }
+            
+            functionsStatus.className = 'status info';
+            functionsStatus.textContent = 'Testing contract functions...';
+            functionsLoading.classList.remove('hidden');
+            functionResults.classList.add('hidden');
+            
+            try {
+                // Test connection first
+                const connected = await testConnection();
+                if (!connected) {
+                    functionsStatus.className = 'status error';
+                    functionsStatus.textContent = 'Unable to connect to Ronin blockchain. Please check your connection.';
+                    functionsLoading.classList.add('hidden');
+                    return;
+                }
+                
+                // Clear previous results
+                functionResults.innerHTML = '';
+                
+                // Test each function
+                const results = [];
+                
+                for (const [functionName, selector] of Object.entries(COMMON_FUNCTIONS)) {
+                    try {
+                        // Special case for functions with parameters
+                        let callData = selector;
+                        
+                        if (functionName.includes('(address)') && !functionName.includes('()')) {
+                            // For address parameter functions, use the zero address as a test
+                            callData += '0000000000000000000000000000000000000000000000000000000000000000';
+                        }
+                        
+                        const result = await callJsonRpc('eth_call', [{
+                            to: address,
+                            data: callData
+                        }, 'latest']);
+                        
+                        // Try to decode the result
+                        let decodedResult = result;
+                        
+                        if (result && result !== '0x') {
+                            if (result.length === 66) {
+                                // Might be a uint256 or address
+                                if (result.startsWith('0x000000000000000000000000')) {
+                                    // Likely an address
+                                    decodedResult = '0x' + result.substring(26);
+                                } else {
+                                    // Likely a number
+                                    decodedResult = parseInt(result, 16).toString();
+                                }
+                            }
+                        }
+                        
+                        results.push({
+                            name: functionName,
+                            success: true,
+                            result: result,
+                            decoded: decodedResult
+                        });
+                    } catch (error) {
+                        results.push({
+                            name: functionName,
+                            success: false,
+                            error: error.message
+                        });
+                    }
+                }
+                
+                // Display results
+                const successfulResults = results.filter(r => r.success);
+                
+                if (successfulResults.length === 0) {
+                    functionsStatus.className = 'status error';
+                    functionsStatus.textContent = 'No supported functions found for this contract.';
+                } else {
+                    functionsStatus.className = 'status success';
+                    functionsStatus.textContent = `Found ${successfulResults.length} supported functions!`;
+                    
+                    successfulResults.forEach(result => {
+                        const item = document.createElement('li');
+                        item.className = 'method-item';
+                        
+                        item.innerHTML = `
+                            <div class="method-name">${result.name}</div>
+                            <div class="method-result">${result.decoded}</div>
+                        `;
+                        
+                        functionResults.appendChild(item);
+                    });
+                    
+                    functionResults.classList.remove('hidden');
+                }
+                
+                functionsLoading.classList.add('hidden');
+                
+            } catch (error) {
+                functionsStatus.className = 'status error';
+                functionsStatus.textContent = `Error testing functions: ${error.message}`;
+                functionsLoading.classList.add('hidden');
+            }
+        }
+        
+        // Function to call a custom function
+        async function callCustomFunction() {
+            const address = contractAddressInput.value.trim();
+            const functionSignature = functionSignatureInput.value.trim();
+            const functionParams = functionParamsInput.value.trim();
+            
+            if (!address || !address.startsWith('0x') || address.length !== 42) {
+                functionStatus.className = 'status error';
+                functionStatus.textContent = 'Please enter a valid contract address (0x...)';
+                return;
+            }
+            
+            if (!functionSignature) {
+                functionStatus.className = 'status error';
+                functionStatus.textContent = 'Please enter a function signature';
+                return;
+            }
+            
+            functionStatus.className = 'status info';
+            functionStatus.textContent = `Calling ${functionSignature}...`;
+            functionResult.classList.add('hidden');
+            
+            try {
+                // Test connection first
+                const connected = await testConnection();
+                if (!connected) {
+                    functionStatus.className = 'status error';
+                    functionStatus.textContent = 'Unable to connect to Ronin blockchain. Please check your connection.';
+                    return;
+                }
+                
+                // Calculate function selector (first 4 bytes of keccak256 hash of the function signature)
+                // Note: This is a simplified implementation and may not work for all signatures
+                function keccak256(str) {
+                    // This is a placeholder - we would need a full keccak256 implementation
+                    // For now, check if it's in our common functions
+                    if (COMMON_FUNCTIONS[str]) {
+                        return COMMON_FUNCTIONS[str];
+                    }
+                    
+                    // For functions not in our list, hash the name and take first 4 bytes
+                    // This is just a naive implementation for demonstration
+                    let hash = 0;
+                    for (let i = 0; i < str.length; i++) {
+                        hash = ((hash << 5) - hash) + str.charCodeAt(i);
+                        hash = hash & hash; // Convert to 32bit integer
+                    }
+                    return '0x' + Math.abs(hash).toString(16).padStart(8, '0');
+                }
+                
+                const selector = keccak256(functionSignature);
+                
+                // Build call data
+                let callData = selector;
+                
+                // Add parameters if needed
+                if (functionParams) {
+                    // Simple implementation - assumes just a single address parameter
+                    if (functionSignature.includes('address') && functionParams.startsWith('0x')) {
+                        // Remove 0x prefix and pad to 32 bytes
+                        const paddedAddress = functionParams.slice(2).padStart(64, '0');
+                        callData += paddedAddress;
+                    }
+                }
+                
+                const result = await callJsonRpc('eth_call', [{
+                    to: address,
+                    data: callData
+                }, 'latest']);
+                
+                // Try to decode the result
+                let decodedResult = result;
+                
+                if (result && result !== '0x') {
+                    if (result.length === 66) {
+                        // Might be a uint256 or address
+                        if (result.startsWith('0x000000000000000000000000')) {
+                            // Likely an address
+                            decodedResult = '0x' + result.substring(26);
+                        } else {
+                            // Likely a number
+                            decodedResult = parseInt(result, 16).toString();
+                        }
+                    }
+                }
+                
+                functionStatus.className = 'status success';
+                functionStatus.textContent = `Successfully called ${functionSignature}`;
+                
+                functionResult.innerHTML = `
+                    <p><strong>Function:</strong> ${functionSignature}</p>
+                    <p><strong>Raw Result:</strong> ${result}</p>
+                    <p><strong>Decoded:</strong> ${decodedResult}</p>
+                `;
+                functionResult.classList.remove('hidden');
+                
+            } catch (error) {
+                functionStatus.className = 'status error';
+                functionStatus.textContent = `Error calling function: ${error.message}`;
+            }
+        }
+        
+        // Initialize by testing connection
+        testConnection();
+    </script>
+</body>
+</html>
